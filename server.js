@@ -3,7 +3,7 @@ const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 
-app.use(express.static('public')); // Thư mục chứa giao diện
+app.use(express.static(__dirname)); // Thư mục chứa giao diện
 
 let players = {};
 
@@ -39,3 +39,4 @@ io.on('connection', (socket) => {
 });
 
 http.listen(3000, () => console.log('Thế giới đã mở tại http://localhost:3000'));
+
