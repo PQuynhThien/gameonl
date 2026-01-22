@@ -3,23 +3,26 @@ const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 
-app.use(express.static(__dirname)); // Thư mục chứa giao diện
+app.use(express.static(__dirname)); 
 
 let players = {};
 
 io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
+    console.log('Người chơi mới kết nối:', socket.id);
 
-    // Tạo nhân vật mới với vị trí ngẫu nhiên và tên tạm thời
+    // Tạo nhân vật và chia phe ngẫu nhiên
     players[socket.id] = {
-        x: Math.random() * 700 + 50,
-        y: Math.random() * 500 + 50,
+        x: Math.random() * 800 + 100,
+        y: Math.random() * 800 + 100,
         id: socket.id,
-        name: "Guest_" + socket.id.substring(0,4)
+        team: Math.random() > 0.5 ? 'fire' : 'ice',
+        name: "Player_" + socket.id.substring(0,4)
     };
 
+    // Gửi dữ liệu cho tất cả mọi người
     io.emit('currentPlayers', players);
 
+    // Xử lý di chuyển
     socket.on('move', (data) => {
         if (players[socket.id]) {
             players[socket.id].x = data.x;
@@ -28,8 +31,14 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('chat', (message) => {
-        io.emit('newMessage', { id: socket.id, msg: message });
+    // Xử lý tấn công (Bắn đạn)
+    socket.on('shoot', (bulletData) => {
+        io.emit('newBullet', {
+            x: bulletData.x,
+            y: bulletData.y,
+            angle: bulletData.angle,
+            team: players[socket.id].team
+        });
     });
 
     socket.on('disconnect', () => {
@@ -38,5 +47,5 @@ io.on('connection', (socket) => {
     });
 });
 
-http.listen(3000, () => console.log('Thế giới đã mở tại http://localhost:3000'));
-
+const PORT = process.env.PORT || 3000;
+http.listen(PORT, () => console.log('Server Live on port ' + PORT));
