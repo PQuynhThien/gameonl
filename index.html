@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Game Online Đơn Giản</title>
+    <style>
+        canvas { border: 2px solid black; background: #f0f0f0; }
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let players = {};
+
+        // Nhận danh sách người chơi từ server
+        socket.on('currentPlayers', (serverPlayers) => {
+            players = serverPlayers;
+        });
+
+        // Cập nhật khi có người khác di chuyển
+        socket.on('playerMoved', (data) => {
+            if (players[data.id]) {
+                players[data.id].x = data.x;
+                players[data.id].y = data.y;
+            }
+        });
+
+        // Xóa người chơi khi họ thoát
+        socket.on('playerDisconnected', (id) => {
+            delete players[id];
+        });
+
+        // Điều khiển nhân vật bằng chuột
+        canvas.addEventListener('mousemove', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = event.clientX - rect.left;
+            const mouseY = event.clientY - rect.top;
+
+            if (players[socket.id]) {
+                players[socket.id].x = mouseX;
+                players[socket.id].y = mouseY;
+                socket.emit('playerMovement', { x: mouseX, y: mouseY });
+            }
+        });
+
+        // Vòng lặp vẽ game (Render loop)
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Xóa màn hình cũ
+            
+            for (let id in players) {
+                const p = players[id];
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x - 25, p.y - 25, 50, 50); // Vẽ hình vuông nhân vật
+                ctx.strokeRect(p.x - 25, p.y - 25, 50, 50);
+            }
+            requestAnimationFrame(draw);
+        }
+        draw();
+    </script>
+</body>
+</html>
