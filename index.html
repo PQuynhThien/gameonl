@@ -1,67 +1,94 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Game Online Đơn Giản</title>
+    <title>Thế Giới Tự Do</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <style>
-        canvas { border: 2px solid black; background: #f0f0f0; }
-        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        body { margin: 0; overflow: hidden; background: #222; }
+        #chat-box { position: absolute; bottom: 10px; left: 10px; width: 300px; height: 150px; 
+                    background: rgba(0,0,0,0.5); color: white; overflow-y: auto; padding: 10px; font-family: sans-serif; }
+        #chat-input { position: absolute; bottom: 170px; left: 10px; width: 290px; }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="chat-box">Hệ thống: Chào mừng bạn!</div>
+    <input type="text" id="chat-input" placeholder="Nhấn Enter để chat...">
 
-    <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        
-        let players = {};
+        const config = {
+            type: Phaser.AUTO,
+            width: window.innerWidth,
+            height: window.innerHeight,
+            scene: { preload: preload, create: create, update: update }
+        };
 
-        // Nhận danh sách người chơi từ server
-        socket.on('currentPlayers', (serverPlayers) => {
-            players = serverPlayers;
-        });
+        const game = new Phaser.Game(config);
+        let otherPlayers = {};
+        let player;
+        let cursors;
 
-        // Cập nhật khi có người khác di chuyển
-        socket.on('playerMoved', (data) => {
-            if (players[data.id]) {
-                players[data.id].x = data.x;
-                players[data.id].y = data.y;
-            }
-        });
+        function preload() {}
 
-        // Xóa người chơi khi họ thoát
-        socket.on('playerDisconnected', (id) => {
-            delete players[id];
-        });
-
-        // Điều khiển nhân vật bằng chuột
-        canvas.addEventListener('mousemove', (event) => {
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = event.clientX - rect.left;
-            const mouseY = event.clientY - rect.top;
-
-            if (players[socket.id]) {
-                players[socket.id].x = mouseX;
-                players[socket.id].y = mouseY;
-                socket.emit('playerMovement', { x: mouseX, y: mouseY });
-            }
-        });
-
-        // Vòng lặp vẽ game (Render loop)
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height); // Xóa màn hình cũ
+        function create() {
+            cursors = this.input.keyboard.createCursorKeys();
             
-            for (let id in players) {
-                const p = players[id];
-                ctx.fillStyle = p.color;
-                ctx.fillRect(p.x - 25, p.y - 25, 50, 50); // Vẽ hình vuông nhân vật
-                ctx.strokeRect(p.x - 25, p.y - 25, 50, 50);
-            }
-            requestAnimationFrame(draw);
+            socket.on('currentPlayers', (players) => {
+                Object.keys(players).forEach((id) => {
+                    if (id === socket.id) {
+                        addPlayer(this, players[id]);
+                    } else {
+                        addOtherPlayers(this, players[id]);
+                    }
+                });
+            });
+
+            socket.on('playerMoved', (playerInfo) => {
+                if (otherPlayers[playerInfo.id]) {
+                    otherPlayers[playerInfo.id].setPosition(playerInfo.x, playerInfo.y);
+                }
+            });
+
+            socket.on('newMessage', (data) => {
+                const chatBox = document.getElementById('chat-box');
+                chatBox.innerHTML += `<div><b>${data.id.substring(0,4)}:</b> ${data.msg}</div>`;
+                chatBox.scrollTop = chatBox.scrollHeight;
+            });
+
+            // Xử lý Chat
+            document.getElementById('chat-input').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && e.target.value !== "") {
+                    socket.emit('chat', e.target.value);
+                    e.target.value = "";
+                }
+            });
         }
-        draw();
+
+        function addPlayer(scene, info) {
+            player = scene.add.rectangle(info.x, info.y, 40, 40, 0x00ff00);
+            scene.add.text(info.x - 20, info.y - 40, "Bạn", { fontSize: '14px' });
+        }
+
+        function addOtherPlayers(scene, info) {
+            const other = scene.add.rectangle(info.x, info.y, 40, 40, 0xff0000);
+            other.id = info.id;
+            otherPlayers[info.id] = other;
+        }
+
+        function update() {
+            if (player) {
+                let moved = false;
+                if (cursors.left.isDown) { player.x -= 5; moved = true; }
+                else if (cursors.right.isDown) { player.x += 5; moved = true; }
+                if (cursors.up.isDown) { player.y -= 5; moved = true; }
+                else if (cursors.down.isDown) { player.y += 5; moved = true; }
+
+                if (moved) {
+                    socket.emit('move', { x: player.x, y: player.y });
+                }
+            }
+        }
     </script>
 </body>
 </html>
