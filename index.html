@@ -1,90 +1,116 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Thế Giới Tự Do</title>
+    <title>Băng và Lửa Online</title>
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; background: #222; }
-        #chat-box { position: absolute; bottom: 10px; left: 10px; width: 300px; height: 150px; 
-                    background: rgba(0,0,0,0.5); color: white; overflow-y: auto; padding: 10px; font-family: sans-serif; }
-        #chat-input { position: absolute; bottom: 170px; left: 10px; width: 290px; }
+        body { margin: 0; background: #000; color: white; font-family: sans-serif; }
+        canvas { display: block; margin: 0 auto; }
+        #ui { position: absolute; top: 10px; left: 10px; pointer-events: none; }
     </style>
 </head>
 <body>
-    <div id="chat-box">Hệ thống: Chào mừng bạn!</div>
-    <input type="text" id="chat-input" placeholder="Nhấn Enter để chat...">
+    <div id="ui">Dùng phím mũi tên để đi, Click chuột để BẮN!</div>
 
     <script>
-        const socket = io();
+        // THAY LINK RENDER CỦA BẠN VÀO ĐÂY
+        const socket = io("https://gameonl.onrender.com"); 
+
         const config = {
             type: Phaser.AUTO,
             width: window.innerWidth,
             height: window.innerHeight,
+            physics: { default: 'arcade' },
             scene: { preload: preload, create: create, update: update }
         };
 
         const game = new Phaser.Game(config);
-        let otherPlayers = {};
         let player;
+        let otherPlayers = {};
         let cursors;
+        let bullets;
 
         function preload() {}
 
         function create() {
-            cursors = this.input.keyboard.createCursorKeys();
+            // Tạo nền lưới cổ điển
+            this.add.grid(0, 0, 4000, 4000, 50, 50, 0x111111).setAltFillStyle(0x000000).setOrigin(0);
             
+            bullets = this.physics.add.group();
+            cursors = this.input.keyboard.createCursorKeys();
+
             socket.on('currentPlayers', (players) => {
                 Object.keys(players).forEach((id) => {
                     if (id === socket.id) {
                         addPlayer(this, players[id]);
-                    } else {
+                        this.cameras.main.startFollow(player);
+                    } else if (!otherPlayers[id]) {
                         addOtherPlayers(this, players[id]);
                     }
                 });
             });
 
-            socket.on('playerMoved', (playerInfo) => {
-                if (otherPlayers[playerInfo.id]) {
-                    otherPlayers[playerInfo.id].setPosition(playerInfo.x, playerInfo.y);
+            socket.on('playerMoved', (info) => {
+                if (otherPlayers[info.id]) {
+                    otherPlayers[info.id].setPosition(info.x, info.y);
                 }
             });
 
-            socket.on('newMessage', (data) => {
-                const chatBox = document.getElementById('chat-box');
-                chatBox.innerHTML += `<div><b>${data.id.substring(0,4)}:</b> ${data.msg}</div>`;
-                chatBox.scrollTop = chatBox.scrollHeight;
+            socket.on('newBullet', (data) => {
+                const color = data.team === 'fire' ? 0xff4500 : 0x00bfff;
+                let b = bullets.create(data.x, data.y, null);
+                b.setCircle(5);
+                b.body.setAllowGravity(false);
+                this.add.circle(data.x, data.y, 6, color);
+                this.physics.velocityFromRotation(data.angle, 400, b.body.velocity);
             });
 
-            // Xử lý Chat
-            document.getElementById('chat-input').addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && e.target.value !== "") {
-                    socket.emit('chat', e.target.value);
-                    e.target.value = "";
+            socket.on('playerDisconnected', (id) => {
+                if (otherPlayers[id]) {
+                    otherPlayers[id].destroy();
+                    delete otherPlayers[id];
+                }
+            });
+
+            // Click chuột để bắn
+            this.input.on('pointerdown', (pointer) => {
+                if (player) {
+                    const angle = Phaser.Math.Angle.Between(player.x, player.y, pointer.worldX, pointer.worldY);
+                    socket.emit('shoot', { x: player.x, y: player.y, angle: angle });
                 }
             });
         }
 
         function addPlayer(scene, info) {
-            player = scene.add.rectangle(info.x, info.y, 40, 40, 0x00ff00);
-            scene.add.text(info.x - 20, info.y - 40, "Bạn", { fontSize: '14px' });
+            const color = info.team === 'fire' ? 0xff4500 : 0x00bfff;
+            player = scene.add.container(info.x, info.y);
+            let body = scene.add.circle(0, 0, 20, color).setStrokeStyle(2, 0xffffff);
+            let text = scene.add.text(-25, -40, "BẠN (" + info.team + ")", { fontSize: '14px' });
+            player.add([body, text]);
+            scene.physics.world.enable(player);
         }
 
         function addOtherPlayers(scene, info) {
-            const other = scene.add.rectangle(info.x, info.y, 40, 40, 0xff0000);
+            const color = info.team === 'fire' ? 0xff4500 : 0x00bfff;
+            let other = scene.add.container(info.x, info.y);
+            let body = scene.add.circle(0, 0, 20, color);
+            let text = scene.add.text(-25, -40, info.name, { fontSize: '12px' });
+            other.add([body, text]);
             other.id = info.id;
             otherPlayers[info.id] = other;
         }
 
         function update() {
             if (player) {
-                let moved = false;
-                if (cursors.left.isDown) { player.x -= 5; moved = true; }
-                else if (cursors.right.isDown) { player.x += 5; moved = true; }
-                if (cursors.up.isDown) { player.y -= 5; moved = true; }
-                else if (cursors.down.isDown) { player.y += 5; moved = true; }
+                let vx = 0, vy = 0;
+                if (cursors.left.isDown) vx = -200;
+                else if (cursors.right.isDown) vx = 200;
+                if (cursors.up.isDown) vy = -200;
+                else if (cursors.down.isDown) vy = 200;
 
-                if (moved) {
+                player.body.setVelocity(vx, vy);
+                if (vx !== 0 || vy !== 0) {
                     socket.emit('move', { x: player.x, y: player.y });
                 }
             }
